@@ -34,6 +34,41 @@ async function run() {
       res.send(services);
     });
 
+    // Warning: This is not the proper way to query multiple collection.
+    // After learning more about mongodb. use aggregate, lookup, pipeline, match, group
+    app.get("/available", async (req, res) => {
+      const date = req.query.date;
+      console.log(date);
+      //1. get all services
+      const services = await serviceCollection.find().toArray();
+
+      //2. get the booking of that day. output: [{},{},{},{},{},{},{},{},{}]
+      const query = { date: date };
+      const bookings = await bookingCollection.find(query).toArray();
+      // 3. for each service, find bookings for that service
+      services.forEach((service) => {
+        // 4. find bookings for that service. output: [{},{},{}]
+        const serviceBookings = bookings.filter(
+          (book) => book.treatment === service.name
+        );
+        // 5. select slots for the service bookings: ['', '','','','','',]
+        const bookedSlots = serviceBookings.map((book) => book.slot);
+        // 6. select those slots that are not in bookedSlots
+        const available = service.slots.filter(
+          (slot) => !bookedSlots.includes(slot)
+        );
+        // 7: set available to slots to make it easier
+        service.available = available;
+      });
+      res.send(services);
+    });
+    // app.get("/booking", async (req, res) => {
+    //   const query = {};
+    //   const cursor = bookingCollection.find(query);
+    //   const booking = await cursor.toArray();
+    //   res.send(booking);
+    // });
+
     /**
      * API Naming Convention
      * app.get('/booking)// get all bookings in this collection or get more than one or filter
@@ -56,13 +91,6 @@ async function run() {
       }
       const result = await bookingCollection.insertOne(booking);
       return res.send({ success: true, result });
-    });
-
-    app.get("/booking", async (req, res) => {
-      const query = {};
-      const cursor = bookingCollection.find(query);
-      const booking = await cursor.toArray();
-      res.send(booking);
     });
   } finally {
   }
