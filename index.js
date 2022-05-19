@@ -38,12 +38,13 @@ async function run() {
     // After learning more about mongodb. use aggregate, lookup, pipeline, match, group
     app.get("/available", async (req, res) => {
       const date = req.query.date;
-      console.log(date);
+
       //1. get all services
       const services = await serviceCollection.find().toArray();
 
       //2. get the booking of that day. output: [{},{},{},{},{},{},{},{},{}]
       const query = { date: date };
+      console.log(query);
       const bookings = await bookingCollection.find(query).toArray();
       // 3. for each service, find bookings for that service
       services.forEach((service) => {
@@ -58,16 +59,17 @@ async function run() {
           (slot) => !bookedSlots.includes(slot)
         );
         // 7: set available to slots to make it easier
-        service.available = available;
+        service.slots = available;
       });
       res.send(services);
     });
-    // app.get("/booking", async (req, res) => {
-    //   const query = {};
-    //   const cursor = bookingCollection.find(query);
-    //   const booking = await cursor.toArray();
-    //   res.send(booking);
-    // });
+
+    app.get("/booking", async (req, res) => {
+      const patient = req.query.patient;
+      const query = { patient: patient };
+      const bookings = await bookingCollection.find(query).toArray();
+      res.send(bookings);
+    });
 
     /**
      * API Naming Convention
