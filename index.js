@@ -3,6 +3,9 @@ const cors = require("cors");
 const jwt = require("jsonwebtoken");
 require("dotenv").config();
 const { MongoClient, ServerApiVersion } = require("mongodb");
+var nodemailer = require("nodemailer");
+var sgTransport = require("nodemailer-sendgrid-transport");
+
 const app = express();
 const port = process.env.PORT || 5000;
 app.use(cors());
@@ -15,6 +18,65 @@ const client = new MongoClient(uri, {
   serverApi: ServerApiVersion.v1,
 });
 
+//
+//
+//JWT verify
+//
+//
+function verifyJWT(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).send({ message: "Unauthorized access" });
+  }
+  const token = authHeader.split(" ")[1];
+  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, function (err, decoded) {
+    if (err) {
+      return res.status(403).send({ message: "Forbidden access" });
+    }
+    req.decoded = decoded;
+    next();
+  });
+}
+
+// Appointment Email sender
+const emailSenderOptions = {
+  auth: {
+    api_key: process.env.EMAIL_SENDER_KEY,
+  },
+};
+
+const emailClient = nodemailer.createTransport(sgTransport(emailSenderOptions));
+
+function sendAppointmentEmail(booking) {
+  const { patient, patientName, treatment, date, slot } = booking;
+
+  var email = {
+    from: process.env.EMAIL_SENDER,
+    to: patient,
+    subject: `Your Appointment for ${treatment} is on ${date} at ${slot} is Confirmed`,
+    text: `Your Appointment for ${treatment} is on ${date} at ${slot} is Confirmed`,
+    html: `
+          <div>
+            <p> Hello ${patientName}, </p>
+            <h3>Your Appointment for ${treatment} is confirmed</h3>
+            <p>Looking forward to seeing you on ${date} at ${slot}.</p>
+            
+            <h3>Our Address</h3>
+            <p>Andor Killa Bandorban</p>
+            <p>Bangladesh</p>
+            <a href="https://web.programming-hero.com/">unsubscribe</a>
+          </div>
+        `,
+  };
+
+  emailClient.sendMail(email, function (err, info) {
+    if (err) {
+      console.log(err);
+    } else {
+      console.log("Message sent: ", info);
+    }
+  });
+}
 async function run() {
   try {
     await client.connect();
@@ -25,33 +87,26 @@ async function run() {
       .db("doctors_portal")
       .collection("bookings");
     const userCollection = client.db("doctors_portal").collection("users");
-
+    const doctorCollection = client.db("doctors_portal").collection("doctors");
     //
     //
-    //JWT verify
+    //  Verify Admin
     //
     //
-    function verifyJWT(req, res, next) {
-      const authHeader = req.headers.authorization;
-      if (!authHeader) {
-        return res.status(401).send({ message: "Unauthorized access" });
+    const verifyAdmin = async (req, res, next) => {
+      const requester = req.decoded.email;
+      const requesterAccount = await userCollection.findOne({
+        email: requester,
+      });
+      if (requesterAccount.role === "admin") {
+        next();
+      } else {
+        res.status(403).send({ message: "forbidden" });
       }
-      const token = authHeader.split(" ")[1];
-      jwt.verify(
-        token,
-        process.env.ACCESS_TOKEN_SECRET,
-        function (err, decoded) {
-          if (err) {
-            return res.status(403).send({ message: "Forbidden access" });
-          }
-          req.decoded = decoded;
-          next();
-        }
-      );
-    }
+    };
     //
     //
-    // GET operations on available route
+    //operations on available route
     //
     //
     app.get("/available", async (req, res) => {
@@ -84,44 +139,14 @@ async function run() {
     });
 
     //
-    // GET operations on service route
+    // operations on service route
     //
 
     app.get("/service", async (req, res) => {
       const query = {};
-      const cursor = serviceCollection.find(query);
+      const cursor = serviceCollection.find(query).project({ name: 1 });
       const services = await cursor.toArray();
       res.send(services);
-    });
-
-    //
-    // GET operations on users route
-    //
-    app.get("/users", verifyJWT, async (req, res) => {
-      const users = await userCollection.find().toArray();
-      res.send(users);
-    });
-
-    app.get("/admin/:email", async (req, res) => {
-      const email = req.params.email;
-      const user = await userCollection.findOne({ email: email });
-      const isAdmin = user.role === "admin";
-      res.send({ admin: isAdmin });
-    });
-
-    //
-    // GET operations on booking route
-    //
-    app.get("/booking", verifyJWT, async (req, res) => {
-      const patient = req.query.patient;
-      const decodedEmail = req.decoded.email;
-      if (patient === decodedEmail) {
-        const query = { patient: patient };
-        const bookings = await bookingCollection.find(query).toArray();
-        return res.send(bookings);
-      } else {
-        return res.status(403).send({ message: "forbidden access" });
-      }
     });
 
     // Warning: This is not the proper way to query multiple collection.
@@ -139,10 +164,16 @@ async function run() {
     //
     //
     //
-    // PUT operations
+    // operations on users
     //
     //
     //
+
+    app.get("/users", verifyJWT, async (req, res) => {
+      const users = await userCollection.find().toArray();
+      res.send(users);
+    });
+
     app.put("/users/:email", async (req, res) => {
       const email = req.params.email;
       const user = req.body;
@@ -161,7 +192,7 @@ async function run() {
       res.send({ result, accessToken: token });
     });
 
-    app.put("/users/admin/:email", verifyJWT, async (req, res) => {
+    app.put("/users/admin/:email", verifyJWT, verifyAdmin, async (req, res) => {
       const email = req.params.email;
       const requester = req.decoded.email;
       const requesterAccount = await userCollection.findOne({
@@ -178,10 +209,18 @@ async function run() {
         res.status(403).send({ message: "forbidden" });
       }
     });
+
+    app.get("/admin/:email", async (req, res) => {
+      const email = req.params.email;
+      const user = await userCollection.findOne({ email: email });
+      const isAdmin = user.role === "admin";
+      res.send({ admin: isAdmin });
+    });
+
     //
     //
     //
-    //POST operations
+    //operations on booking
     //
     //
     //
@@ -197,7 +236,41 @@ async function run() {
         return res.send({ success: false, booking: exists });
       }
       const result = await bookingCollection.insertOne(booking);
+      console.log("sending email");
+      sendAppointmentEmail(booking);
       return res.send({ success: true, result });
+    });
+
+    app.get("/booking", verifyJWT, async (req, res) => {
+      const patient = req.query.patient;
+      const decodedEmail = req.decoded.email;
+      if (patient === decodedEmail) {
+        const query = { patient: patient };
+        const bookings = await bookingCollection.find(query).toArray();
+        return res.send(bookings);
+      } else {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+    });
+    //
+    //
+    // operation on doctor
+    //
+    //
+    app.get("/doctor", async (req, res) => {
+      const doctors = await doctorCollection.find().toArray();
+      res.send(doctors);
+    });
+    app.post("/doctor", async (req, res) => {
+      const doctor = req.body;
+      const result = await doctorCollection.insertOne(doctor);
+      res.send(result);
+    });
+    app.delete("/doctor/:email", async (req, res) => {
+      const email = req.params.email;
+      const filter = { email: email };
+      const result = await doctorCollection.deleteOne(filter);
+      res.send(result);
     });
   } finally {
   }
