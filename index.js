@@ -29,6 +29,7 @@ function verifyJWT(req, res, next) {
     return res.status(401).send({ message: "Unauthorized access" });
   }
   const token = authHeader.split(" ")[1];
+
   jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, function (err, decoded) {
     if (err) {
       return res.status(403).send({ message: "Forbidden access" });
@@ -257,7 +258,7 @@ async function run() {
     // operation on doctor
     //
     //
-    app.get("/doctor", verifyJWT, verifyAdmin, async (req, res) => {
+    app.get("/doctor", verifyJWT, async (req, res) => {
       const doctors = await doctorCollection.find().toArray();
       res.send(doctors);
     });
