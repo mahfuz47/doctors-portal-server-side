@@ -258,7 +258,7 @@ async function run() {
     // operation on doctor
     //
     //
-    app.get("/doctor", verifyJWT, async (req, res) => {
+    app.get("/doctor", verifyJWT, verifyAdmin, async (req, res) => {
       const doctors = await doctorCollection.find().toArray();
       res.send(doctors);
     });
