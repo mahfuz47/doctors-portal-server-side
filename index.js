@@ -246,7 +246,7 @@ async function run() {
       res.send(booking);
     });
 
-    app.post("/booking", verifyJWT, async (req, res) => {
+    app.post("/booking", async (req, res) => {
       const booking = req.body;
       const query = {
         treatment: booking.treatment,
